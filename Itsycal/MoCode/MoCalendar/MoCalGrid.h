@@ -15,6 +15,11 @@
 
 @property (nonatomic, readonly) NSArray<MoCalCell *> *cells;
 @property (nonatomic, readonly) NSUInteger rows;
+@property (nonatomic) BOOL usesLunarRowHeight;
+@property (nonatomic) BOOL showsLunarDates;
+@property (nonatomic, readonly) CGFloat rowHeight;
+// Defaults to verticalMargin; can be reduced independently of the top margin.
+@property (nonatomic) CGFloat bottomMargin;
 
 - (instancetype)initWithRows:(NSUInteger)rows columns:(NSUInteger)cols horizontalMargin:(NSUInteger)hMargin verticalMargin:(NSUInteger)vMargin;
 

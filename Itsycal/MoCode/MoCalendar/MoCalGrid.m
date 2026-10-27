@@ -26,7 +26,8 @@
                 CGFloat x = sz * col + hMargin;
                 CGFloat y = sz * rows - sz * (row + 1) + vMargin;
                 MoCalCell *cell = [MoCalCell new];
-                [cell setFrame:NSMakeRect(x, y, sz, sz)];
+                [cell setFrame:NSMakeRect(x, y, sz, self.rowHeight)];
+                cell.showsLunarDate = self.showsLunarDates;
                 [self addSubview:cell];
                 [cells addObject:cell];
             }
@@ -36,6 +37,7 @@
         _cols  = cols;
         _hMargin = hMargin;
         _vMargin = vMargin;
+        _bottomMargin = vMargin;
         
         // Hug the cells tightly
         [self setContentHuggingPriority:NSLayoutPriorityDefaultHigh forOrientation:NSLayoutConstraintOrientationVertical];
@@ -51,6 +53,29 @@
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
+- (CGFloat)rowHeight
+{
+    return SizePref.cellSize + (self.usesLunarRowHeight ? SizePref.lunarRowExtraHeight : 0);
+}
+
+- (void)setUsesLunarRowHeight:(BOOL)usesLunarRowHeight
+{
+    _usesLunarRowHeight = usesLunarRowHeight;
+    [self sizeChanged:nil];
+}
+
+- (void)setBottomMargin:(CGFloat)bottomMargin
+{
+    _bottomMargin = MAX(0, bottomMargin);
+    [self sizeChanged:nil];
+}
+
+- (void)setShowsLunarDates:(BOOL)showsLunarDates
+{
+    _showsLunarDates = showsLunarDates;
+    for (MoCalCell *cell in _cells) cell.showsLunarDate = showsLunarDates;
+}
+
 - (void)addRow
 {
     NSMutableArray *cells = [_cells mutableCopy];
@@ -58,7 +83,7 @@
     // Shift existing cells up.
     for (MoCalCell *cell in cells) {
         NSRect frame = cell.frame;
-        frame.origin.y += SizePref.cellSize;
+        frame.origin.y += self.rowHeight;
         cell.frame = frame;
     }
 
@@ -66,9 +91,10 @@
     CGFloat sz = SizePref.cellSize;
     for (NSUInteger col = 0; col < _cols; col++) {
         CGFloat x = sz * col + _hMargin;
-        CGFloat y = sz * (_rows + 1) - sz * (_rows + 1) + _vMargin;
+        CGFloat y = self.bottomMargin;
         MoCalCell *cell = [MoCalCell new];
-        [cell setFrame:NSMakeRect(x, y, sz, sz)];
+        [cell setFrame:NSMakeRect(x, y, sz, self.rowHeight)];
+        cell.showsLunarDate = self.showsLunarDates;
         [self addSubview:cell];
         [cells addObject:cell];
     }
@@ -90,10 +116,9 @@
     }
 
     // Shift remaining cells down.
-    CGFloat sz = SizePref.cellSize;
     for (MoCalCell *cell in cells) {
         NSRect frame = cell.frame;
-        frame.origin.y -= sz;
+        frame.origin.y -= self.rowHeight;
         cell.frame = frame;
     }
 
@@ -106,7 +131,7 @@
 {
     CGFloat sz = SizePref.cellSize;
     NSInteger col = floorf((point.x - _hMargin) / sz);
-    NSInteger row = floorf((point.y - _vMargin) / sz);
+    NSInteger row = floorf((point.y - self.bottomMargin) / self.rowHeight);
     row = _rows - row - 1; // flip row coordinate
     if (col < 0 || row < 0 || col >= _cols || row >= _rows) {
         return nil;
@@ -126,14 +151,16 @@
 
 - (NSRect)cellsRect
 {
-    return NSInsetRect(self.bounds, _hMargin, _vMargin);
+    return NSMakeRect(_hMargin, self.bottomMargin,
+                      NSWidth(self.bounds) - 2 * _hMargin,
+                      NSHeight(self.bounds) - _vMargin - self.bottomMargin);
 }
 
 - (NSSize)intrinsicContentSize
 {
     CGFloat sz = SizePref.cellSize;
     CGFloat width  = sz  * _cols + 2 * _hMargin;
-    CGFloat height = sz * _rows + 2 * _vMargin;
+    CGFloat height = self.rowHeight * _rows + _vMargin + self.bottomMargin;
     return NSMakeSize(width, height);
 }
 
@@ -143,9 +170,10 @@
     for (NSUInteger row = 0; row < _rows; row++) {
         for (NSUInteger col = 0; col < _cols; col++) {
             CGFloat x = sz * col + _hMargin;
-            CGFloat y = sz * _rows - sz * (row + 1) + _vMargin;
+            CGFloat y = self.rowHeight * (_rows - row - 1) + self.bottomMargin;
             MoCalCell *cell = _cells[row*_cols + col];
-            [cell setFrame:NSMakeRect(x, y, sz, sz)];
+            [cell setFrame:NSMakeRect(x, y, sz, self.rowHeight)];
+            cell.showsLunarDate = self.showsLunarDates;
         }
     }
     [self invalidateIntrinsicContentSize];

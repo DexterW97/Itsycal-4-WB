@@ -51,6 +51,14 @@ Sizer *SizePref = nil;
     return SML_MED_LRG(23, 28, 32);
 }
 
+- (CGFloat)lunarRowExtraHeight {
+    return SML_MED_LRG(15, 17, 19);
+}
+
+- (CGFloat)lunarFontSize {
+    return SML_MED_LRG(9, 10, 11);
+}
+
 - (CGFloat)cellTextFieldVerticalSpace {
     return SML_MED_LRG(2, 2, 2);
 }

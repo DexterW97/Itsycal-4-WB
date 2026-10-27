@@ -24,14 +24,13 @@
 #import "MoPopover.h"
 #import "MoVFLHelper.h"
 #import "MoUtils.h"
-#import "Sparkle/SUUpdater.h"
 
 // Keys observed in NSUserDefaults for preference changes. Registered in
 // -fileNotifications and unregistered in -dealloc.
 static NSArray<NSString *> *ObservedDefaultsKeys(void)
 {
-    return @[kShowEventDays, kMenuBarIconType, kShowMonthInIcon, kShowDayOfWeekInIcon,
-              kShowDaysWithNoEventsInAgenda, kShowMeetingIndicator, kHideIcon,
+    return @[kMenuBarIconType, kShowMonthInIcon, kShowDayOfWeekInIcon,
+              kShowMeetingIndicator, kHideIcon,
               kBaselineOffset, kClockFormat, kWindowPosition];
 }
 
@@ -42,9 +41,8 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
     NSCalendar    *_nsCal;
     NSStatusItem  *_statusItem;
     id             _rightClickMonitor;
-    MoButton      *_btnAdd, *_btnCal, *_btnOpt, *_btnPin;
+    MoButton      *_btnOpt, *_btnPin;
     NSWindowController    *_prefsWC;
-    AgendaViewController  *_agendaVC;
     NSDateFormatter       *_iconDateFormatter;
     NSTimeInterval         _inactiveTime;
     NSDictionary          *_filteredEventsForDate;
@@ -105,29 +103,19 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
         return btn;
     };
 
-    // Add event, Calendar.app, and Options buttons
-    _btnAdd = btn(@"btnAdd", NSLocalizedString(@"New Event   ⌘N", @""), @"n", @selector(addCalendarEvent:));
-    _btnCal = btn(@"btnCal", NSLocalizedString(@"Open Calendar   ⌘O", @""), @"o", @selector(showCalendarApp:));
+    // Header actions
     _btnOpt = btn(@"btnOpt", NSLocalizedString(@"Options", @""), @"", @selector(showOptionsMenu:));
     _btnPin = btn(@"btnPin", NSLocalizedString(@"Pin Itsycal   P", @""), @"p", @selector(pin:));
     _btnPin.keyEquivalentModifierMask = 0;
     _btnPin.alternateImage = [NSImage imageNamed:@"btnPinAlt"];
     [_btnPin setButtonType:NSButtonTypeToggle];
     
-    // Agenda
-    _agendaVC = [AgendaViewController new];
-    _agendaVC.delegate = self;
-    _agendaVC.identifier = @"AgendaVC";
-    NSView *agenda = _agendaVC.view;
-    [v addSubview:agenda];
+    [_moCal installHeaderPinButton:_btnPin optionsButton:_btnOpt];
 
-    // Constraints
-    MoVFLHelper *vfl = [[MoVFLHelper alloc] initWithSuperview:v metrics:nil views:NSDictionaryOfVariableBindings(_moCal, _btnAdd, _btnCal, _btnOpt, _btnPin, agenda)];
+    MoVFLHelper *vfl = [[MoVFLHelper alloc] initWithSuperview:v metrics:nil views:NSDictionaryOfVariableBindings(_moCal)];
     [vfl :@"H:|-2-[_moCal]-2-|"];
-    [vfl :@"H:|[agenda]|"];
-    [vfl :@"H:|-8-[_btnAdd]-(>=0)-[_btnPin]-6-[_btnCal]-6-[_btnOpt]-8-|" :NSLayoutFormatAlignAllCenterY];
-    [vfl :@"V:|[_moCal]-6-[_btnOpt(22)]-1-[agenda]-(-1)-|"];
-    
+    [vfl :@"V:|[_moCal]|"];
+
     self.view = v;
 }
 
@@ -143,7 +131,6 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
 
     // Calendar is 'autoupdating' so it handles timezone changes properly.
     _nsCal = [NSCalendar autoupdatingCurrentCalendar];
-    _agendaVC.nsCal = _nsCal;
     
     MoDate today = [self todayDate];
     _moCal.todayDate = today;
@@ -170,7 +157,6 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
     [_moCal bind:@"highlightedDOWs" toObject:[NSUserDefaultsController sharedUserDefaultsController] withKeyPath:[@"values." stringByAppendingString:kHighlightedDOWs] options:@{NSContinuouslyUpdatesValueBindingOption: @(YES)}];
     [_moCal bind:@"weekStartDOW" toObject:[NSUserDefaultsController sharedUserDefaultsController] withKeyPath:[@"values." stringByAppendingString:kWeekStartDOW] options:@{NSContinuouslyUpdatesValueBindingOption: @(YES)}];
     [_moCal bind:@"doNotDrawOutlineAroundCurrentMonth" toObject:[NSUserDefaultsController sharedUserDefaultsController] withKeyPath:[@"values." stringByAppendingString:kDoNotDrawOutlineAroundCurrentMonth] options:@{NSContinuouslyUpdatesValueBindingOption: @(YES)}];
-    [_agendaVC bind:@"showLocation" toObject:[NSUserDefaultsController sharedUserDefaultsController] withKeyPath:[@"values." stringByAppendingString:kShowLocation] options:@{NSContinuouslyUpdatesValueBindingOption: @(YES)}];
 
     // A very ugly and questionable hack. Maybe it doesn't work. It
     // shouldn't work. But I think it might. Somehow prevents(?!?)
@@ -215,8 +201,11 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
     if (keyChar == 'w' && noFlags) {
         [[NSUserDefaults standardUserDefaults] setBool:!_moCal.showWeeks forKey:kShowWeeks];
     }
-    else if (keyChar == '.' && noFlags) {
-        [[NSUserDefaults standardUserDefaults] setBool:!_agendaVC.showLocation forKey:kShowLocation];
+    else if (keyChar == 'n' && cmdFlag) {
+        [self addCalendarEvent:self];
+    }
+    else if (keyChar == 'o' && cmdFlag) {
+        [self showCalendarApp:self];
     }
     else if (keyChar == ',' && cmdFlag) {
         [self showPrefs:self];
@@ -226,9 +215,6 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
     }
     else if (keyChar == 'r' && cmdOptFlag) {
         [_ec refresh];
-    }
-    else if (keyChar == 'j' && cmdFlag) {
-        if (![_agendaVC clickFirstActiveZoomButton]) NSBeep();
     }
     else {
         [super keyDown:theEvent];
@@ -295,7 +281,7 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
     eventVC.calSelectedDate = MakeNSDateWithDate(_moCal.selectedDate, _nsCal);
     
     _newEventPopover.contentViewController = eventVC;
-    [_newEventPopover showRelativeToRect:_btnAdd.bounds ofView:_btnAdd preferredEdge:NSRectEdgeMinX];
+    [_newEventPopover showRelativeToRect:_moCal.bounds ofView:_moCal preferredEdge:NSRectEdgeMaxX];
 }
 
 - (void)showCalendarApp:(id)sender
@@ -381,7 +367,8 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
         item.preferredImageVisibility = NSMenuItemImageVisibilityHidden;
     }
 
-    NSPoint pt = NSOffsetRect(_btnOpt.frame, -5, -10).origin;
+    NSRect buttonRect = [self.view convertRect:_btnOpt.bounds fromView:_btnOpt];
+    NSPoint pt = NSOffsetRect(buttonRect, -5, -10).origin;
     [optMenu popUpMenuPositioningItem:nil atLocation:pt inView:self.view];
 }
 
@@ -451,7 +438,8 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
 
 - (void)checkForUpdates:(id)sender
 {
-    [[SUUpdater sharedUpdater] checkForUpdates:self];
+    NSURL *url = [NSURL URLWithString:@"https://github.com/DexterW97/Itsycal-4-WB/releases/latest"];
+    [NSWorkspace.sharedWorkspace openURL:url];
 }
 
 - (void)openDateAndTimePrefs:(id)sender
@@ -887,9 +875,6 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
     // top of the menu item to be at most the top of the screen.
     statusItemFrame.origin.y = MIN(statusItemFrame.origin.y, NSMaxY(statusItemScreen.frame));
     
-    // So that agenda height can adjust to fit screen if needed.
-    [_agendaVC.view setNeedsLayout:YES];
-
     [self.itsycalWindow positionRelativeToRect:statusItemFrame screenMaxX:screenMaxX];
 }
 
@@ -1034,86 +1019,6 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
 }
 
 #pragma mark -
-#pragma mark AgendaDelegate
-
-- (void)agendaHoveredOverRow:(NSInteger)row
-{
-    if (row == -1) {
-        [_moCal unhighlightCells];
-    }
-    else {
-        EventInfo *info = _agendaVC.events[row];
-        MoDate startDate = MakeDateWithNSDate(info.event.startDate, _nsCal);
-        MoDate endDate   = MakeDateWithNSDate(info.event.endDate,   _nsCal);
-        // Fixup for endDates that are at midnight
-        if ([info.event.endDate compare:[_nsCal startOfDayForDate:info.event.endDate]] == NSOrderedSame) {
-            endDate = AddDaysToDate(-1, endDate);
-        }
-        [_moCal highlightCellsFromDate:startDate toDate:endDate withColor:info.event.calendar.color];
-    }
-}
-
-- (void)agendaWantsToDeleteEvent:(EKEvent *)event
-{
-    [[NSApplication sharedApplication] activateIgnoringOtherApps:YES];
-    
-    // Make a string showing the event title and duration.
-    static NSDateIntervalFormatter *durationFormatter = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        durationFormatter = [NSDateIntervalFormatter new];
-        durationFormatter.dateStyle = NSDateIntervalFormatterMediumStyle;
-    });
-    durationFormatter.locale = DateIntervalFormatterLocale();
-    durationFormatter.timeStyle = event.isAllDay ? NSDateIntervalFormatterNoStyle : NSDateIntervalFormatterShortStyle;
-    NSString *title = event.title == nil ? @"" : event.title;
-    NSString *duration = [durationFormatter stringFromDate:event.startDate toDate:event.endDate];
-    NSString *eventString = [NSString stringWithFormat:@"%@\n%@", title, duration];
-
-    BOOL eventRepeats = event.hasRecurrenceRules;
-    
-    // Ask the user to confirm they want to delete this event (or future events).
-    NSAlert *alert = [NSAlert new];
-    if (eventRepeats == YES) {
-        alert.messageText = NSLocalizedString(@"You're deleting an event.", @"");
-        alert.informativeText = [NSString stringWithFormat:@"%@\n\n%@", eventString, NSLocalizedString(@"Do you want to delete this and all future occurrences of this event, or only the selected occurrence?", @"")];
-        [alert addButtonWithTitle:NSLocalizedString(@"Delete Only This Event", @"")];
-        [alert addButtonWithTitle:NSLocalizedString(@"Delete All Future Events", @"")];
-    }
-    else {
-        alert.messageText = NSLocalizedString(@"Are you sure you want to delete this event?", @"");
-        alert.informativeText = eventString;
-        [alert addButtonWithTitle:NSLocalizedString(@"Delete This Event", @"")];
-    }
-    [alert addButtonWithTitle:NSLocalizedString(@"Cancel", @"")];
-    NSModalResponse response = [alert runModal];
-    
-    // Return if the user chose 'Cancel'.
-    if ((eventRepeats == YES && response == NSAlertThirdButtonReturn) ||
-        (eventRepeats == NO && response == NSAlertSecondButtonReturn)) {
-        return;
-    }
-    
-    // Delete this event (or future events).
-    NSError *error = NULL;
-    EKSpan span = (eventRepeats && response == NSAlertSecondButtonReturn) ? EKSpanFutureEvents : EKSpanThisEvent;
-    BOOL result = [_ec removeEvent:event span:span error:&error];
-    if (result == NO && error != nil) {
-        [[NSAlert alertWithError:error] runModal];
-    }
-}
-
-- (void)agendaShowCalendarAppAtDate:(NSDate *)date
-{
-    [self showCalendarAppAtDate:date dayView:YES];
-}
-
-- (CGFloat)agendaMaxPossibleHeight
-{
-    return NSHeight(_screenFrame) - NSHeight(_moCal.frame) - 140;
-}
-
-#pragma mark -
 #pragma mark MoCalendarDelegate
 
 - (void)calendarUpdated:(MoCalendar *)cal
@@ -1126,7 +1031,7 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
 
 - (void)calendarSelectionChanged:(MoCalendar *)cal
 {
-    [self updateAgenda];
+    [self showMeetingIndicatorIfNecessary];
 }
 
 - (NSArray<NSColor *> *)dotColorsForDate:(MoDate)date useColor:(BOOL)useColor
@@ -1155,37 +1060,6 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
     return _filteredEventsForDate[nsDate];
 }
 
-- (NSArray *)datesAndEventsForDate:(MoDate)date days:(NSInteger)days
-{
-    NSMutableArray *datesAndEvents = [NSMutableArray new];
-    MoDate endDate = AddDaysToDate(days, date);
-    while (CompareDates(date, endDate) < 0) {
-        NSDate *nsDate = MakeNSDateWithDate(date, _nsCal);
-        NSArray *events = _filteredEventsForDate[nsDate];
-        if (events != nil) {
-            [nsDate setHasNoEvents:NO];
-            [datesAndEvents addObject:nsDate];
-            [datesAndEvents addObjectsFromArray:events];
-        }
-        else {
-            if ([[NSUserDefaults standardUserDefaults] boolForKey:kShowDaysWithNoEventsInAgenda]) {
-                // If the user wants to show days with no events in the agenda,
-                // we need the objects we add to `datesAndEvents` to be
-                // annotated so AgendaViewController can handle them
-                // appropriately. For the date, we set an associated object.
-                // For the event we give it a new EventInfo. Importantly, the
-                // EventInfo's `event` property will be nil and we will use
-                // this fact in AgendaViewController.
-                [nsDate setHasNoEvents:YES];
-                [datesAndEvents addObject:nsDate];
-                [datesAndEvents addObject:[EventInfo new]];
-            }
-        }
-        date = AddDaysToDate(1, date);
-    }
-    return datesAndEvents;
-}
-
 #pragma mark -
 #pragma mark EventCenterDelegate
 
@@ -1194,7 +1068,7 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
     //os_log(OS_LOG_DEFAULT, "%s", __FUNCTION__);
     _filteredEventsForDate = [_ec filteredEventsForDate];
     [_moCal reloadData];
-    [self updateAgenda];
+    [self showMeetingIndicatorIfNecessary];
 }
 
 - (MoDate)fetchStartDate
@@ -1204,27 +1078,8 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
 
 - (MoDate)fetchEndDate
 {
-    return AddDaysToDate([self daysToShowInAgenda], _moCal.lastDate);
-}
-
-#pragma mark -
-#pragma mark Agenda
-
-- (NSInteger)daysToShowInAgenda
-{
-    NSInteger days = [[NSUserDefaults standardUserDefaults] integerForKey:kShowEventDays];
-    days = MIN(MAX(days, 0), 9); // days is in range 0..9
-    // days == 8 really means 14; 9 really means 31
-    if (days == 8) days = 14; else if (days == 9) days = 31;
-    return days;
-}
-
-- (void)updateAgenda
-{
-    NSInteger days = [self daysToShowInAgenda];
-    _agendaVC.events = [self datesAndEventsForDate:_moCal.selectedDate days:days];
-    [_agendaVC reloadData];
-    [self showMeetingIndicatorIfNecessary];
+    // EventKit uses an exclusive end instant; include the last visible day.
+    return AddDaysToDate(1, _moCal.lastDate);
 }
 
 #pragma mark -
@@ -1336,14 +1191,12 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
     _timer = [[NSTimer alloc] initWithFireDate:fireDate interval:0 target:self selector:@selector(updateTimer) userInfo:nil repeats:NO];
     [NSRunLoop.mainRunLoop addTimer:_timer forMode:NSRunLoopCommonModes];
     
-    // Check if past events should be dimmed each minute.
-    // Also check if we should show the meeting indicator.
-    static NSTimeInterval dimEventsTime = 0;
+    // Check the meeting indicator each minute.
+    static NSTimeInterval meetingCheckTime = 0;
     NSTimeInterval currentTime = MonotonicClockTime();
-    NSTimeInterval elapsedTime = currentTime - dimEventsTime;
+    NSTimeInterval elapsedTime = currentTime - meetingCheckTime;
     if (elapsedTime > 60 || fabs(elapsedTime - 60) < 0.5) {
-        [_agendaVC dimEventsIfNecessary];
-        dimEventsTime = currentTime;
+        meetingCheckTime = currentTime;
         [self showMeetingIndicatorIfNecessary];
     }
     // Reset calendar to today after 10 minutes of inactivity.
@@ -1462,7 +1315,7 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
         if (!strongSelf) return;
         [strongSelf updateMenubarIcon];
         [strongSelf updateTimer];
-        [strongSelf updateAgenda]; // 12/24 hr time change in sys prefs
+        [strongSelf showMeetingIndicatorIfNecessary]; // 12/24 hr time change in sys prefs
     }];
     [_notificationTokens addObject:token];
 
@@ -1496,11 +1349,7 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary<NSString *,id> *)change context:(void *)context
 {
-    if ([keyPath isEqualToString:kShowEventDays] ||
-        [keyPath isEqualToString:kShowDaysWithNoEventsInAgenda]) {
-        [self updateAgenda];
-    }
-    else if ([keyPath isEqualToString:kMenuBarIconType] ||
+    if ([keyPath isEqualToString:kMenuBarIconType] ||
              [keyPath isEqualToString:kShowMonthInIcon] ||
              [keyPath isEqualToString:kShowDayOfWeekInIcon] ||
              [keyPath isEqualToString:kShowMeetingIndicator] ||

@@ -34,6 +34,17 @@
         [self addConstraint:_textFieldVerticalSpace];
 
         
+        _lunarTextField = [NSTextField labelWithString:@""];
+        _lunarTextField.font = [NSFont systemFontOfSize:SizePref.lunarFontSize];
+        _lunarTextField.alignment = NSTextAlignmentCenter;
+        _lunarTextField.translatesAutoresizingMaskIntoConstraints = NO;
+        _lunarTextField.hidden = YES;
+        [self addSubview:_lunarTextField];
+        [NSLayoutConstraint activateConstraints:@[
+            [_lunarTextField.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
+            [_lunarTextField.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+            [_lunarTextField.topAnchor constraintEqualToAnchor:_textField.bottomAnchor constant:-1],
+        ]];
         REGISTER_FOR_SIZE_CHANGE;
     }
     return self;
@@ -48,6 +59,19 @@
 {
     [_textField setFont:[NSFont systemFontOfSize:SizePref.fontSize weight:NSFontWeightMedium]];
     _textFieldVerticalSpace.constant = SizePref.cellTextFieldVerticalSpace;
+    [self setLunarDateLabel:_lunarTextField.stringValue];
+}
+
+- (void)setLunarDateLabel:(NSString *)label {
+    _lunarTextField.stringValue = label;
+    // Three-character leap month names must still fit the smallest columns.
+    CGFloat fontSize = MIN(SizePref.lunarFontSize, (SizePref.cellSize - 2) / MAX(label.length, 2));
+    _lunarTextField.font = [NSFont systemFontOfSize:fontSize];
+}
+
+- (void)setShowsLunarDate:(BOOL)showsLunarDate {
+    _showsLunarDate = showsLunarDate;
+    _lunarTextField.hidden = !showsLunarDate;
 }
 
 - (void)setIsToday:(BOOL)isToday {
@@ -89,6 +113,7 @@
 
 - (void)updateTextColor {
     self.textField.textColor = self.isInCurrentMonth ? Theme.currentMonthTextColor : Theme.noncurrentMonthTextColor;
+    self.lunarTextField.textColor = self.isInCurrentMonth ? Theme.currentMonthTextColor : Theme.noncurrentMonthTextColor;
 }
 
 - (void)drawRect:(NSRect)dirtyRect

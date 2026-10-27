@@ -11,7 +11,7 @@
 #import "MoCalGrid.h"
 #import "MoButton.h"
 #import "MoVFLHelper.h"
-#import "MoCalResizeHandle.h"
+#import "MoLunarDate.h"
 #import "Themer.h"
 #import "Sizer.h"
 
@@ -33,7 +33,8 @@ NSString * const kMoCalendarNumRows = @"MoCalendarNumRows";
     __weak MoCalCell *_monthEndCell;
     NSBezierPath *_highlightPath;
     NSColor *_highlightColor;
-    MoCalResizeHandle *_resizeHandle;
+    NSArray<NSLayoutConstraint *> *_headerConstraints;
+    NSArray<NSLayoutConstraint *> *_headerButtonWidths;
     NSInteger _repeatCount;
 }
 
@@ -83,6 +84,9 @@ NSString * const kMoCalendarNumRows = @"MoCalendarNumRows";
     _btnPrev  = btn(@"btnPrev",  @selector(showPreviousMonth:));
     _btnToday = btn(@"btnToday", @selector(showTodayMonth:));
     _btnNext  = btn(@"btnNext",  @selector(showNextMonth:));
+    for (NSButton *button in @[_btnPrev, _btnToday, _btnNext]) {
+        button.imageScaling = NSImageScaleProportionallyDown;
+    }
 
     NSInteger numRows = [[NSUserDefaults standardUserDefaults] integerForKey:kMoCalendarNumRows];
     numRows = MIN(MAX(numRows, 6), 10);
@@ -95,24 +99,30 @@ NSString * const kMoCalendarNumRows = @"MoCalendarNumRows";
         cell.textField.font = [NSFont systemFontOfSize:SizePref.fontSize weight:NSFontWeightSemibold];
     }
 
-    // The _resizeHandle is at the bottom of the calendar.
-    _resizeHandle = [MoCalResizeHandle new];
-    [_resizeHandle dim:YES];
+    _dateGrid.usesLunarRowHeight = YES;
+    _dateGrid.showsLunarDates = YES;
+    _weekGrid.usesLunarRowHeight = YES;
+    _dateGrid.bottomMargin = 0;
+    _weekGrid.bottomMargin = 0;
+    _btnPrev.toolTip = NSLocalizedString(@"Previous month", @"");
+    _btnToday.toolTip = NSLocalizedString(@"Today", @"");
+    _btnNext.toolTip = NSLocalizedString(@"Next month", @"");
+    for (NSButton *button in @[_btnPrev, _btnToday, _btnNext]) {
+        button.accessibilityLabel = button.toolTip;
+    }
 
     [self addSubview:_monthLabel];
     [self addSubview:_dateGrid];
     [self addSubview:_weekGrid];
     [self addSubview:_dowGrid];
-    [self addSubview:_resizeHandle];
 
-    MoVFLHelper *vfl = [[MoVFLHelper alloc] initWithSuperview:self metrics:nil views:NSDictionaryOfVariableBindings(_monthLabel, _btnPrev, _btnToday, _btnNext, _dowGrid, _weekGrid, _dateGrid, _resizeHandle)];
-    [vfl :@"H:|-8-[_monthLabel]-4-[_btnPrev][_btnToday][_btnNext]-8-|" :NSLayoutFormatAlignAllCenterY];
+    MoVFLHelper *vfl = [[MoVFLHelper alloc] initWithSuperview:self metrics:nil views:NSDictionaryOfVariableBindings(_monthLabel, _btnPrev, _btnToday, _btnNext, _dowGrid, _weekGrid, _dateGrid)];
+    _headerConstraints = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|-8-[_monthLabel]-4-[_btnPrev][_btnToday][_btnNext]-8-|" options:NSLayoutFormatAlignAllCenterY metrics:nil views:NSDictionaryOfVariableBindings(_monthLabel, _btnPrev, _btnToday, _btnNext)];
+    [self addConstraints:_headerConstraints];
     [vfl :@"H:[_dowGrid]|"];
     [vfl :@"H:[_weekGrid]-(-2)-[_dateGrid]|"];
-    [vfl :@"H:|[_resizeHandle]|"];
-    [vfl :@"V:|-(-1)-[_monthLabel]-7-[_dowGrid]-(-6)-[_dateGrid]-5-|"];
-    [vfl :@"V:[_weekGrid]-5-|"];
-    [vfl :@"V:[_resizeHandle(8)]|"];
+    [vfl :@"V:|-(-1)-[_monthLabel]-7-[_dowGrid]-(-6)-[_dateGrid]-1-|"];
+    [vfl :@"V:[_weekGrid]-1-|"];
 
     _weeksConstraint = [NSLayoutConstraint constraintWithItem:_weekGrid attribute:NSLayoutAttributeRight relatedBy:NSLayoutRelationEqual toItem:self attribute:NSLayoutAttributeLeft multiplier:1 constant:2];
     [self addConstraint:_weeksConstraint];
@@ -129,6 +139,32 @@ NSString * const kMoCalendarNumRows = @"MoCalendarNumRows";
     [self setMonthDate:_todayDate selectedDate:_todayDate];
     
     REGISTER_FOR_SIZE_CHANGE;
+}
+
+- (void)installHeaderPinButton:(NSButton *)pinButton optionsButton:(NSButton *)optionsButton
+{
+    [NSLayoutConstraint deactivateConstraints:_headerConstraints];
+    for (NSButton *button in @[pinButton, optionsButton]) {
+        [button removeFromSuperview];
+        button.translatesAutoresizingMaskIntoConstraints = NO;
+        button.imageScaling = NSImageScaleProportionallyDown;
+        button.accessibilityLabel = button.toolTip;
+        [self addSubview:button];
+    }
+    NSDictionary *views = NSDictionaryOfVariableBindings(_monthLabel, _btnPrev, _btnToday, _btnNext, pinButton, optionsButton);
+    _headerConstraints = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|-8-[_monthLabel]-2-[_btnPrev][_btnToday][_btnNext]-2-[pinButton]-2-[optionsButton]-8-|" options:NSLayoutFormatAlignAllCenterY metrics:nil views:views];
+    [self addConstraints:_headerConstraints];
+    NSMutableArray *widths = [NSMutableArray new];
+    for (NSButton *button in @[_btnPrev, _btnToday, _btnNext, pinButton, optionsButton]) {
+        CGFloat width = SizePref.fontSize + ((button == pinButton || button == optionsButton) ? 5 : 3);
+        [widths addObject:[button.widthAnchor constraintEqualToConstant:width]];
+    }
+    _headerButtonWidths = widths;
+    [NSLayoutConstraint activateConstraints:_headerButtonWidths];
+    [NSLayoutConstraint activateConstraints:@[
+        [pinButton.heightAnchor constraintEqualToConstant:18],
+        [optionsButton.heightAnchor constraintEqualToConstant:18],
+    ]];
 }
 
 - (void)dealloc
@@ -214,7 +250,11 @@ NSString * const kMoCalendarNumRows = @"MoCalendarNumRows";
 - (void)setShowWeeks:(BOOL)showWeeks
 {
     _showWeeks = showWeeks;
-    CGFloat constant = showWeeks ? NSWidth(_weekGrid.frame) : 2;
+    CGFloat constant = showWeeks ? SizePref.cellSize : 2;
+    if (!self.window.isVisible) {
+        _weeksConstraint.constant = constant;
+        return;
+    }
     [NSAnimationContext runAnimationGroup:^(NSAnimationContext *ctx) {
         [ctx setDuration:0.1];
         [self->_weeksConstraint.animator setConstant:constant];
@@ -325,6 +365,8 @@ NSString * const kMoCalendarNumRows = @"MoCalendarNumRows";
             MoCalCell *cell = _dateGrid.cells[row * 7 + col];
             cell.textField.integerValue = date.day;
             cell.date = date;
+            [cell setLunarDateLabel:MoLunarDateLabel(date)];
+            cell.accessibilityLabel = [NSString stringWithFormat:@"%zd-%02zd-%02zd，农历%@", date.year, date.month + 1, date.day, cell.lunarTextField.stringValue];
             cell.isToday = CompareDates(date, self.todayDate) == 0;
             cell.isHighlighted = [self columnIsMemberOfHighlightedDOWs:col];
             cell.isInCurrentMonth = (date.month == self.monthDate.month);
@@ -397,6 +439,9 @@ NSString * const kMoCalendarNumRows = @"MoCalendarNumRows";
 {
     _monthLabel.font = [NSFont systemFontOfSize:SizePref.calendarTitleFontSize weight:NSFontWeightSemibold];
     _weeksConstraint.constant = self.showWeeks ? SizePref.cellSize : 2;
+    [_headerButtonWidths enumerateObjectsUsingBlock:^(NSLayoutConstraint *constraint, NSUInteger index, BOOL *stop) {
+        constraint.constant = SizePref.fontSize + (index < 3 ? 3 : 5);
+    }];
 }
 
 #pragma mark -
@@ -475,34 +520,6 @@ NSString * const kMoCalendarNumRows = @"MoCalendarNumRows";
     [_tooltipWC endTooltip];
 }
 
-- (void)mouseDown:(NSEvent *)theEvent
-{
-    CGFloat sz = SizePref.cellSize;
-    NSPoint initialDragPoint = [self convertPoint:[theEvent locationInWindow] fromView:nil];
-    BOOL isDragging = NSPointInRect(initialDragPoint, _resizeHandle.frame);
-
-    while (isDragging) {
-        theEvent = [[self window] nextEventMatchingMask: NSEventMaskLeftMouseUp | NSEventMaskLeftMouseDragged];
-        if ([theEvent type] == NSEventTypeLeftMouseUp) {
-            isDragging = NO;
-        }
-        else if ([theEvent type] == NSEventTypeLeftMouseDragged) {
-            NSPoint location = [self convertPoint:[theEvent locationInWindow] fromView:nil];
-            if (location.y >= initialDragPoint.y + sz && _dateGrid.rows > 6) {
-                [self removeRow];
-            }
-            else if (location.y <= initialDragPoint.y - sz && _dateGrid.rows < 10) {
-                [self addRow];
-            }
-        }
-    }
-
-    // Dim resizeHandle if drag ends outside of it (-mouseExited: won't catch this).
-    NSPoint finalDragPoint = [self convertPoint:[theEvent locationInWindow] fromView:nil];
-    BOOL isInResizeHandle = NSPointInRect(finalDragPoint, _resizeHandle.frame);
-    [_resizeHandle dim:!isInResizeHandle];
-}
-
 - (void)mouseUp:(NSEvent *)theEvent
 {
     if ([theEvent clickCount] == 1) {
@@ -554,24 +571,12 @@ NSString * const kMoCalendarNumRows = @"MoCalendarNumRows";
     }
 }
 
-- (void)mouseEntered:(NSEvent *)theEvent
-{
-    if ([[(NSDictionary *)[theEvent userData] valueForKey:@"area"] isEqualToString: @"resizeHandle"]) {
-        [_resizeHandle dim:NO];
-    }
-}
-
 - (void)mouseExited:(NSEvent *)theEvent
 {
-    if ([[(NSDictionary *)[theEvent userData] valueForKey:@"area"] isEqualToString: @"resizeHandle"]) {
-        [_resizeHandle dim:YES];
-    }
-    else { // userData[area] == "dateGrid"
-        _hoveredCell.isHovered = NO;
-        _hoveredCell = nil;
-        [_tooltipWC hideTooltip];
-        [self setNeedsDisplay:YES];
-    }
+    _hoveredCell.isHovered = NO;
+    _hoveredCell = nil;
+    [_tooltipWC hideTooltip];
+    [self setNeedsDisplay:YES];
 }
 
 - (void)updateTrackingAreas
@@ -583,10 +588,7 @@ NSString * const kMoCalendarNumRows = @"MoCalendarNumRows";
     NSRect cellsRect = [self convertRect:[_dateGrid cellsRect] fromView:_dateGrid];
     NSTrackingArea *cellsTrackingArea = [[NSTrackingArea alloc] initWithRect:cellsRect options:(NSTrackingMouseMoved | NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways) owner:self userInfo:@{@"area": @"dateGrid"}];
 
-    NSTrackingArea *resizeHandleTrackingArea = [[NSTrackingArea alloc] initWithRect:_resizeHandle.frame options:(NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways) owner:self userInfo:@{@"area": @"resizeHandle"}];
-
     [self addTrackingArea:cellsTrackingArea];
-    [self addTrackingArea:resizeHandleTrackingArea];
     [super updateTrackingAreas];
 }
 

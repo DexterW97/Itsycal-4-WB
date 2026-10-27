@@ -14,7 +14,6 @@
 #import "Sizer.h"
 #import "MoUtils.h"
 #import "MASShortcut/Shortcut.h"
-#import "Sparkle/SUUpdater.h"
 
 @implementation AppDelegate
 {
@@ -85,8 +84,7 @@
 {
     NSApp.mainMenu = [self mainMenu];
 
-    // Create Sparkle's updater. This starts its update cycle.
-    [SUUpdater sharedUpdater];
+    // Fork updates are distributed manually through our GitHub Releases.
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification

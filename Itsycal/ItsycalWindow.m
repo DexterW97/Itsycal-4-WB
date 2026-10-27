@@ -14,6 +14,7 @@ static const CGFloat kMinimumSpaceBetweenWindowAndScreenEdge = 10;
 static const CGFloat kArrowHeight  = 8;
 static const CGFloat kCornerRadius = 16;
 static const CGFloat kVerticalPadding = 11;
+static const CGFloat kBottomPadding = 4;
 
 @interface ItsycalWindowFrameView : NSView
 @property (nonatomic, assign) CGFloat arrowMidX;
@@ -102,7 +103,7 @@ static const CGFloat kVerticalPadding = 11;
     self = [super initWithFrame:frameRect];
     if (self) {
         self.wantsLayer = YES;
-        self.additionalSafeAreaInsets = NSEdgeInsetsMake(kArrowHeight + kVerticalPadding, 0, kVerticalPadding, 0);
+        self.additionalSafeAreaInsets = NSEdgeInsetsMake(kArrowHeight + kVerticalPadding, 0, kBottomPadding, 0);
 
         // The window's shape is a rounded body with a little arrow at
         // the top. Masking our layer to that shape clips our background

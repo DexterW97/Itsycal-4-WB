@@ -75,6 +75,8 @@ typedef NS_OPTIONS(NSInteger, DOWMask) {
 @property (nonatomic, weak) id target;
 @property (nonatomic) SEL doubleAction;
 
+- (void)installHeaderPinButton:(NSButton *)pinButton optionsButton:(NSButton *)optionsButton;
+
 - (IBAction)showPreviousMonth:(id)sender;
 - (IBAction)showNextMonth:(id)sender;
 - (IBAction)showTodayMonth:(id)sender;

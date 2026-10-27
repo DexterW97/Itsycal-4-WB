@@ -12,6 +12,9 @@
 @interface MoCalCell : NSView
 
 @property (nonatomic) NSTextField *textField;
+@property (nonatomic, readonly) NSTextField *lunarTextField;
+@property (nonatomic) BOOL showsLunarDate;
+- (void)setLunarDateLabel:(NSString *)label;
 @property (nonatomic) MoDate date;
 @property (nonatomic) BOOL isToday;
 @property (nonatomic) BOOL isHighlighted;

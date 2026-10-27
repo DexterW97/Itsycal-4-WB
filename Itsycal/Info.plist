@@ -56,7 +56,7 @@
 	<key>SUAllowsAutomaticUpdates</key>
 	<false/>
 	<key>SUEnableAutomaticChecks</key>
-	<true/>
+	<false/>
 	<key>SUFeedURL</key>
 	<string>https://s3.amazonaws.com/itsycal/itsycal.xml</string>
 	<key>SUPublicEDKey</key>

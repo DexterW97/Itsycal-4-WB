@@ -29,10 +29,6 @@ static NSString * const kCalendarCellId = @"CalendarCell";
 @implementation PrefsEventsVC
 {
     NSTableView *_calendarsTV;
-    NSTextField *_agendaDaysLabel;
-    NSPopUpButton *_agendaDaysPopup;
-    NSButton *_showLocation;
-    NSButton *_showDaysWithoutEvents;
     NSArray *_sourcesAndCalendars;
 }
 
@@ -43,21 +39,6 @@ static NSString * const kCalendarCellId = @"CalendarCell";
 {
     // View controller content view
     NSView *v = [NSView new];
-
-    // Convenience function for making checkboxes.
-    NSButton* (^chkbx)(NSString *) = ^NSButton* (NSString *title) {
-        NSButton *chkbx = [NSButton checkboxWithTitle:title target:self action:nil];
-        [v addSubview:chkbx];
-        return chkbx;
-    };
-
-    NSTextField *eventListLabel = [NSTextField labelWithString:NSLocalizedString(@"Event List", @"")];
-    eventListLabel.font = [NSFont boldSystemFontOfSize:eventListLabel.font.pointSize-1];
-    [v addSubview:eventListLabel];
-
-    NSBox *separator = [NSBox new];
-    separator.boxType = NSBoxSeparator;
-    [v addSubview:separator];
 
     // Calendars table view
     _calendarsTV = [NSTableView new];
@@ -77,45 +58,9 @@ static NSString * const kCalendarCellId = @"CalendarCell";
     tvContainer.borderType = NSLineBorder;
     [v addSubview:tvContainer];
 
-    // Agenda days label
-    _agendaDaysLabel = [NSTextField labelWithString:NSLocalizedString(@"Show:", @"Label for how many days the event list shows")];
-    [v addSubview:_agendaDaysLabel];
-
-    // Agenda days popup
-    _agendaDaysPopup = [NSPopUpButton new];
-    [_agendaDaysPopup addItemsWithTitles:@[NSLocalizedString(@"No events", @""),
-                                     NSLocalizedString(@"1 day", @""),
-                                     NSLocalizedString(@"2 days", @""),
-                                     NSLocalizedString(@"3 days", @""),
-                                     NSLocalizedString(@"4 days", @""),
-                                     NSLocalizedString(@"5 days", @""),
-                                     NSLocalizedString(@"6 days", @""),
-                                     NSLocalizedString(@"7 days", @""),
-                                     NSLocalizedString(@"14 days", @""),
-                                     NSLocalizedString(@"31 days", @"")]];
-    [_agendaDaysPopup.cell setAccessibilityTitleUIElement:_agendaDaysLabel.cell];
-    [v addSubview:_agendaDaysPopup];
-
-    // Checkboxes
-    _showLocation = chkbx(NSLocalizedString(@"Show event location", @""));
-    _showDaysWithoutEvents = chkbx(NSLocalizedString(@"Show days with no events", @""));
-
-    MoVFLHelper *vfl = [[MoVFLHelper alloc] initWithSuperview:v metrics:@{@"m": @20} views:NSDictionaryOfVariableBindings(eventListLabel, separator, tvContainer, _agendaDaysLabel, _agendaDaysPopup, _showLocation, _showDaysWithoutEvents)];
-    [vfl :@"V:|-m-[tvContainer(170)]-m-[eventListLabel]-10-[_agendaDaysPopup]-m-[_showLocation]-[_showDaysWithoutEvents]-m-|"];
-    [vfl :@"H:|-m-[eventListLabel]-[separator]-m-|" :NSLayoutFormatAlignAllCenterY];
+    MoVFLHelper *vfl = [[MoVFLHelper alloc] initWithSuperview:v metrics:@{@"m": @20} views:NSDictionaryOfVariableBindings(tvContainer)];
+    [vfl :@"V:|-m-[tvContainer(170)]-m-|"];
     [vfl :@"H:|-m-[tvContainer]-m-|"];
-    [vfl :@"H:|-m-[_agendaDaysLabel]-[_agendaDaysPopup]-(>=m)-|" :NSLayoutFormatAlignAllFirstBaseline];
-    [vfl :@"H:|-m-[_showLocation]-(>=m)-|"];
-    [vfl :@"H:|-m-[_showDaysWithoutEvents]-(>=m)-|"];
-
-    // Bindings for agenda days
-    [_agendaDaysPopup bind:@"selectedIndex" toObject:[NSUserDefaultsController sharedUserDefaultsController] withKeyPath:[@"values." stringByAppendingString:kShowEventDays] options:@{NSContinuouslyUpdatesValueBindingOption: @(YES)}];
-
-    // Bindings for showLocation preference
-    [_showLocation bind:@"value" toObject:[NSUserDefaultsController sharedUserDefaultsController] withKeyPath:[@"values." stringByAppendingString:kShowLocation] options:@{NSContinuouslyUpdatesValueBindingOption: @(YES)}];
-
-    // Bindings for showDaysWithoutEvents preference
-    [_showDaysWithoutEvents bind:@"value" toObject:[NSUserDefaultsController sharedUserDefaultsController] withKeyPath:[@"values." stringByAppendingString:kShowDaysWithNoEventsInAgenda] options:@{NSContinuouslyUpdatesValueBindingOption: @(YES)}];
 
     self.view = v;
 }
@@ -127,10 +72,6 @@ static NSString * const kCalendarCellId = @"CalendarCell";
     _sourcesAndCalendars = [self.ec sourcesAndCalendars];
 
     _calendarsTV.enabled = self.ec.calendarAccessGranted;
-    _agendaDaysLabel.textColor = self.ec.calendarAccessGranted ? NSColor.labelColor : NSColor.disabledControlTextColor;
-    _agendaDaysPopup.enabled = self.ec.calendarAccessGranted;
-    _showLocation.enabled = self.ec.calendarAccessGranted;
-    _showDaysWithoutEvents.enabled = self.ec.calendarAccessGranted;
 }
 
 - (void)viewDidAppear
