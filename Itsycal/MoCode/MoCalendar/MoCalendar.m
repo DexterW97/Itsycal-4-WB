@@ -143,28 +143,35 @@ NSString * const kMoCalendarNumRows = @"MoCalendarNumRows";
 
 - (void)installHeaderPinButton:(NSButton *)pinButton optionsButton:(NSButton *)optionsButton
 {
+    [self installBirthdayButton:nil pinButton:pinButton optionsButton:optionsButton];
+}
+
+- (void)installBirthdayButton:(NSButton *)birthdayButton pinButton:(NSButton *)pinButton optionsButton:(NSButton *)optionsButton
+{
     [NSLayoutConstraint deactivateConstraints:_headerConstraints];
-    for (NSButton *button in @[pinButton, optionsButton]) {
-        [button removeFromSuperview];
-        button.translatesAutoresizingMaskIntoConstraints = NO;
-        button.imageScaling = NSImageScaleProportionallyDown;
-        button.accessibilityLabel = button.toolTip;
+    [NSLayoutConstraint deactivateConstraints:_headerButtonWidths];
+    NSMutableArray *buttons=[NSMutableArray arrayWithArray:@[_btnPrev,_btnToday,_btnNext,pinButton,optionsButton]];
+    if (birthdayButton) [buttons insertObject:birthdayButton atIndex:0];
+    for (NSButton *button in buttons) {
+        button.translatesAutoresizingMaskIntoConstraints=NO;
+        button.imageScaling=NSImageScaleProportionallyDown;
+        button.accessibilityLabel=button.toolTip;
         [self addSubview:button];
     }
-    NSDictionary *views = NSDictionaryOfVariableBindings(_monthLabel, _btnPrev, _btnToday, _btnNext, pinButton, optionsButton);
-    _headerConstraints = [NSLayoutConstraint constraintsWithVisualFormat:@"H:|-8-[_monthLabel]-2-[_btnPrev][_btnToday][_btnNext]-2-[pinButton]-2-[optionsButton]-8-|" options:NSLayoutFormatAlignAllCenterY metrics:nil views:views];
-    [self addConstraints:_headerConstraints];
-    NSMutableArray *widths = [NSMutableArray new];
-    for (NSButton *button in @[_btnPrev, _btnToday, _btnNext, pinButton, optionsButton]) {
-        CGFloat width = SizePref.fontSize + ((button == pinButton || button == optionsButton) ? 5 : 3);
+    NSMutableDictionary *views=[NSDictionaryOfVariableBindings(_monthLabel,_btnPrev,_btnToday,_btnNext,pinButton,optionsButton) mutableCopy];
+    NSString *format=@"H:|-8-[_monthLabel]-2-[_btnPrev][_btnToday][_btnNext]-2-[pinButton]-2-[optionsButton]-8-|";
+    if (birthdayButton) { views[@"birthdayButton"]=birthdayButton; format=@"H:|-8-[_monthLabel]-2-[birthdayButton][_btnPrev][_btnToday][_btnNext]-2-[pinButton]-2-[optionsButton]-8-|"; }
+    NSMutableArray *constraints=[[NSLayoutConstraint constraintsWithVisualFormat:format options:NSLayoutFormatAlignAllCenterY metrics:nil views:views] mutableCopy];
+    NSMutableArray *widths=[NSMutableArray new];
+    // Keep the original width, including at the smallest font preference.
+    for (NSButton *button in buttons) {
+        CGFloat width=SizePref.fontSize+1;
         [widths addObject:[button.widthAnchor constraintEqualToConstant:width]];
+        [constraints addObject:[button.heightAnchor constraintEqualToConstant:18]];
     }
-    _headerButtonWidths = widths;
+    _headerConstraints=constraints; _headerButtonWidths=widths;
+    [NSLayoutConstraint activateConstraints:_headerConstraints];
     [NSLayoutConstraint activateConstraints:_headerButtonWidths];
-    [NSLayoutConstraint activateConstraints:@[
-        [pinButton.heightAnchor constraintEqualToConstant:18],
-        [optionsButton.heightAnchor constraintEqualToConstant:18],
-    ]];
 }
 
 - (void)dealloc
@@ -397,6 +404,7 @@ NSString * const kMoCalendarNumRows = @"MoCalendarNumRows";
 - (void)reloadData
 {
     for (MoCalCell *c in _dateGrid.cells) {
+        c.hasBirthday = [self.delegate respondsToSelector:@selector(hasBirthdayOnDate:)] && [self.delegate hasBirthdayOnDate:c.date];
         c.dotColors = self.showEventDots
             ? [self.delegate dotColorsForDate:c.date useColor:self.useColoredDots]
             : nil;
@@ -440,7 +448,7 @@ NSString * const kMoCalendarNumRows = @"MoCalendarNumRows";
     _monthLabel.font = [NSFont systemFontOfSize:SizePref.calendarTitleFontSize weight:NSFontWeightSemibold];
     _weeksConstraint.constant = self.showWeeks ? SizePref.cellSize : 2;
     [_headerButtonWidths enumerateObjectsUsingBlock:^(NSLayoutConstraint *constraint, NSUInteger index, BOOL *stop) {
-        constraint.constant = SizePref.fontSize + (index < 3 ? 3 : 5);
+        constraint.constant = SizePref.fontSize + 1;
     }];
 }
 

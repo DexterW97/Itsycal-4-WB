@@ -17,6 +17,7 @@
 - (void)setLunarDateLabel:(NSString *)label;
 @property (nonatomic) MoDate date;
 @property (nonatomic) BOOL isToday;
+@property (nonatomic) BOOL hasBirthday;
 @property (nonatomic) BOOL isHighlighted;
 @property (nonatomic) BOOL isInCurrentMonth;
 @property (nonatomic) BOOL isHovered;

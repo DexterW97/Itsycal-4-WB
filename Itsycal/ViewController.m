@@ -10,6 +10,7 @@
 #import <AudioToolbox/AudioToolbox.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "ViewController.h"
+#import "BirthdaysVC.h"
 #import "Itsycal.h"
 #import "ItsycalWindow.h"
 #import "DatePickerVC.h"
@@ -41,7 +42,12 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
     NSCalendar    *_nsCal;
     NSStatusItem  *_statusItem;
     id             _rightClickMonitor;
-    MoButton      *_btnOpt, *_btnPin;
+    MoButton      *_btnOpt, *_btnPin, *_btnBirthdays;
+    BirthdayStore *_birthdayStore;
+    BirthdayNotifications *_birthdayNotifications;
+    NSPopover *_birthdaysPopover;
+    NSString *_birthdayScheduleDay;
+    BOOL _showingBirthdays;
     NSWindowController    *_prefsWC;
     NSDateFormatter       *_iconDateFormatter;
     NSTimeInterval         _inactiveTime;
@@ -110,7 +116,9 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
     _btnPin.alternateImage = [NSImage imageNamed:@"btnPinAlt"];
     [_btnPin setButtonType:NSButtonTypeToggle];
     
-    [_moCal installHeaderPinButton:_btnPin optionsButton:_btnOpt];
+    _btnBirthdays=btn(@"btnOpt", @"亲友生日", @"", @selector(showBirthdays:));
+    _btnBirthdays.image=[NSImage imageWithSystemSymbolName:@"birthday.cake" accessibilityDescription:@"亲友生日"];
+    [_moCal installBirthdayButton:_btnBirthdays pinButton:_btnPin optionsButton:_btnOpt];
 
     MoVFLHelper *vfl = [[MoVFLHelper alloc] initWithSuperview:v metrics:nil views:NSDictionaryOfVariableBindings(_moCal)];
     [vfl :@"H:|-2-[_moCal]-2-|"];
@@ -144,6 +152,13 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
     tooltipVC.tooltipDelegate = self;
     _moCal.tooltipVC = tooltipVC;
 
+    _birthdayStore=[BirthdayStore shared];
+    _birthdayNotifications=[[BirthdayNotifications alloc] initWithStore:_birthdayStore];
+    __weak typeof(self) birthdaySelf=self;
+    _birthdayNotifications.openBirthdays=^{ [birthdaySelf showItsycalWindow]; [birthdaySelf showBirthdays:nil]; };
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(birthdaysChanged:) name:BirthdayStoreDidChangeNotification object:_birthdayStore];
+    [_birthdayNotifications refresh];
+    [_moCal reloadData];
     [self updateTimer];
     
     // Now that everything else is set up, we file for notifications.
@@ -344,6 +359,33 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
     NSString *url = [NSString stringWithFormat:@"%@/%04zd-%02zd-%02zd", urlScheme, comp.year, comp.month, comp.day];
     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:url]];
 }
+
+- (void)showBirthdays:(id)sender
+{
+    if (_birthdaysPopover.shown) { [_birthdaysPopover close]; return; }
+    _birthdaysPopover=[MoPopover new];
+    _birthdaysPopover.behavior=NSPopoverBehaviorTransient;
+    _birthdaysPopover.animates=NO;
+    _birthdaysPopover.delegate=self;
+    BirthdaysVC *vc=[[BirthdaysVC alloc] initWithStore:_birthdayStore notifications:_birthdayNotifications];
+    __weak NSPopover *popover=_birthdaysPopover;
+    vc.sizeDidChange=^(NSSize size) { popover.contentSize=size; };
+    _birthdaysPopover.contentViewController=vc;
+    [_birthdayNotifications refresh];
+    _showingBirthdays=YES;
+    [NSApp activateIgnoringOtherApps:YES];
+    [_birthdaysPopover showRelativeToRect:_btnBirthdays.bounds ofView:_btnBirthdays preferredEdge:NSRectEdgeMaxY];
+    _showingBirthdays=NO;
+}
+
+- (void)birthdaysChanged:(NSNotification *)note
+{
+    [_moCal reloadData];
+    [_birthdayNotifications refresh];
+}
+
+- (BOOL)hasBirthdayOnDate:(MoDate)date { return [_birthdayStore birthdaysOnDate:date].count > 0; }
+- (NSArray<Birthday *> *)birthdaysForDate:(MoDate)date { return [_birthdayStore birthdaysOnDate:date]; }
 
 - (void)showOptionsMenu:(id)sender
 {
@@ -969,6 +1011,7 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
 {
     [self.itsycalWindow orderOut:self];
     [_newEventPopover close];
+    [_birthdaysPopover close];
     _inactiveTime = MonotonicClockTime();
 }
 
@@ -985,6 +1028,7 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
 
 - (void)windowDidResignKey:(NSNotification *)notification
 {
+    if (_showingBirthdays || _birthdaysPopover.shown) return;
     if (_btnPin.state == NSControlStateValueOff) {
         [self hideItsycalWindow];
     }
@@ -992,6 +1036,13 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
 
 - (void)popoverDidClose:(NSNotification *)notification
 {
+    if (notification.object == _birthdaysPopover) {
+        __weak typeof(self) weakSelf=self;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) strongSelf=weakSelf;
+            if (strongSelf && !strongSelf->_birthdaysPopover.shown && strongSelf->_btnPin.state==NSControlStateValueOff && NSApp.keyWindow!=strongSelf.itsycalWindow) [strongSelf hideItsycalWindow];
+        });
+    }
     if (notification.object == _newEventPopover) {
         _newEventPopover = nil;
     }
@@ -1150,6 +1201,9 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
 
 - (void)updateTimer
 {
+    NSString *birthdayDay=[NSString stringWithFormat:@"%@|%@", NSStringFromMoDate([self todayDate]), NSTimeZone.localTimeZone.name];
+    if (_birthdayStore && ![_birthdayScheduleDay isEqual:birthdayDay]) { _birthdayScheduleDay=birthdayDay; [_birthdayNotifications refresh]; }
+
     NSDate *now = [NSDate date];
     NSDateComponents *components = [_nsCal components:NSCalendarUnitEra | NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay | NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond fromDate:now];
 
@@ -1296,6 +1350,7 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
         [strongSelf resetCalendarToToday];
         [strongSelf updateMenubarIcon];
         [strongSelf updateTimer];
+        [strongSelf->_birthdayNotifications refresh];
     }];
     [_notificationTokens addObject:token];
 
@@ -1305,6 +1360,7 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
         if (!strongSelf) return;
         [strongSelf updateMenubarIcon];
         [strongSelf updateTimer];
+        [strongSelf->_birthdayNotifications refresh];
         [strongSelf->_ec refetchAll];
     }];
     [_notificationTokens addObject:token];
@@ -1315,6 +1371,7 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
         if (!strongSelf) return;
         [strongSelf updateMenubarIcon];
         [strongSelf updateTimer];
+        [strongSelf->_birthdayNotifications refresh];
         [strongSelf showMeetingIndicatorIfNecessary]; // 12/24 hr time change in sys prefs
     }];
     [_notificationTokens addObject:token];
@@ -1325,6 +1382,7 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
         if (!strongSelf) return;
         [strongSelf updateMenubarIcon];
         [strongSelf updateTimer];
+        [strongSelf->_birthdayNotifications refresh];
         [strongSelf->_ec refetchAll];
     }];
     [_notificationTokens addObject:token];
@@ -1335,6 +1393,7 @@ static NSArray<NSString *> *ObservedDefaultsKeys(void)
         if (!strongSelf) return;
         [strongSelf updateMenubarIcon];
         [strongSelf updateTimer];
+        [strongSelf->_birthdayNotifications refresh];
     }];
     [_notificationTokens addObject:token];
 

@@ -74,6 +74,12 @@
     _lunarTextField.hidden = !showsLunarDate;
 }
 
+- (void)setHasBirthday:(BOOL)hasBirthday {
+    _hasBirthday = hasBirthday;
+    [self updateTextColor];
+    [self setNeedsDisplay:YES];
+}
+
 - (void)setIsToday:(BOOL)isToday {
     _isToday = isToday;
     [self setNeedsDisplay:YES];
@@ -112,7 +118,7 @@
 }
 
 - (void)updateTextColor {
-    self.textField.textColor = self.isInCurrentMonth ? Theme.currentMonthTextColor : Theme.noncurrentMonthTextColor;
+    self.textField.textColor = self.hasBirthday ? (self.isInCurrentMonth ? NSColor.systemRedColor : [NSColor.systemRedColor colorWithAlphaComponent:0.45]) : (self.isInCurrentMonth ? Theme.currentMonthTextColor : Theme.noncurrentMonthTextColor);
     self.lunarTextField.textColor = self.isInCurrentMonth ? Theme.currentMonthTextColor : Theme.noncurrentMonthTextColor;
 }
 

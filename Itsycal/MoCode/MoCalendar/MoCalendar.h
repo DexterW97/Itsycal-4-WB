@@ -76,6 +76,7 @@ typedef NS_OPTIONS(NSInteger, DOWMask) {
 @property (nonatomic) SEL doubleAction;
 
 - (void)installHeaderPinButton:(NSButton *)pinButton optionsButton:(NSButton *)optionsButton;
+- (void)installBirthdayButton:(NSButton *)birthdayButton pinButton:(NSButton *)pinButton optionsButton:(NSButton *)optionsButton;
 
 - (IBAction)showPreviousMonth:(id)sender;
 - (IBAction)showNextMonth:(id)sender;
@@ -100,6 +101,8 @@ typedef NS_OPTIONS(NSInteger, DOWMask) {
 // - An empty array means there is a single dot in the default theme color.
 // - Otherwise, there are up to 3 dots with the given colors.
 - (NSArray<NSColor *> *)dotColorsForDate:(MoDate)date useColor:(BOOL)useColor;
+@optional
+- (BOOL)hasBirthdayOnDate:(MoDate)date;
 
 @end
 

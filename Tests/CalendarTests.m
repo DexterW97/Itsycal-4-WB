@@ -7,6 +7,9 @@
 #import "Sizer.h"
 #import "Themer.h"
 #import "ItsycalWindow.h"
+#import "BirthdaysVC.h"
+#import "TooltipViewController.h"
+#import "EventCenter.h"
 
 static void Check(BOOL ok, NSString *message) {
     if (!ok) { NSLog(@"FAIL: %@", message); exit(1); }
@@ -59,11 +62,79 @@ static void SaveSnapshot(NSView *view, NSString *path) {
     Check([[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES], @"Write preview");
 }
 
+@interface BirthdayCalendarDelegate : NSObject <MoCalendarDelegate> @end
+@implementation BirthdayCalendarDelegate
+- (void)calendarUpdated:(MoCalendar *)cal { [cal reloadData]; }
+- (void)calendarSelectionChanged:(MoCalendar *)cal {}
+- (NSArray *)dotColorsForDate:(MoDate)date useColor:(BOOL)useColor { return nil; }
+- (BOOL)hasBirthdayOnDate:(MoDate)date { return date.year==2026 && date.month==9 && date.day==27; }
+@end
+
+@interface BirthdayTooltipFixture : NSObject <TooltipViewControllerDelegate>
+@property (nonatomic) NSArray *people;
+@property (nonatomic) NSArray *events;
+@end
+@implementation BirthdayTooltipFixture
+- (NSArray *)birthdaysForDate:(MoDate)date { return self.people; }
+- (NSArray *)eventsForDate:(MoDate)date { return self.events; }
+@end
+
+static void TestBirthdayTooltip(NSString *snapshots) {
+    Birthday *a=[Birthday new]; a.name=@"妈妈";
+    Birthday *b=[Birthday new]; b.name=@"小明";
+    BirthdayTooltipFixture *fixture=[BirthdayTooltipFixture new]; fixture.people=@[a,b];
+    TooltipViewController *tooltip=[TooltipViewController new]; tooltip.tooltipDelegate=fixture;
+    Check([tooltip toolTipForDate:MakeDate(2026,9,27)],@"Birthday-only tooltip with no system calendar events");
+    NSTextField *names=[tooltip valueForKey:@"birthdays"];
+    Check([names.stringValue isEqual:@"🎂 妈妈\n🎂 小明"] && [names.textColor isEqual:NSColor.systemRedColor],@"All birthday names in red");
+    NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,236,100) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
+    window.contentView=tooltip.view;
+    [tooltip.view.widthAnchor constraintEqualToConstant:236].active=YES;
+    [window setContentSize:tooltip.view.fittingSize]; [tooltip.view layoutSubtreeIfNeeded];
+    Check(NSHeight(tooltip.view.frame)>20,@"Birthday tooltip has visible height");
+    SaveSnapshot(tooltip.view,[snapshots stringByAppendingPathComponent:@"birthday-tooltip.png"]);
+    fixture.people=@[];
+    Check(![tooltip toolTipForDate:MakeDate(2026,9,28)],@"No empty tooltip on other dates");
+    [window orderOut:nil];
+}
+
+static void TestBirthdayUI(NSString *snapshots) {
+    NSURL *dir=[NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString] isDirectory:YES];
+    BirthdayStore *store=[[BirthdayStore alloc] initWithURL:[dir URLByAppendingPathComponent:@"birthdays.json"]];
+    BirthdaysVC *vc=[[BirthdaysVC alloc] initWithStore:store notifications:nil];
+    NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,340,300) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
+    window.contentViewController=vc;
+    [window setContentSize:vc.view.fittingSize]; [vc.view layoutSubtreeIfNeeded];
+    [vc performSelector:@selector(addBirthday:) withObject:nil];
+    [window setContentSize:vc.view.fittingSize]; [vc.view layoutSubtreeIfNeeded];
+    Check([[vc valueForKey:@"calendarType"] indexOfSelectedItem]==0,@"New birthday defaults to lunar");
+    NSTextField *name=[vc valueForKey:@"nameField"]; name.stringValue=@"测试亲友";
+    NSPopUpButton *month=[vc valueForKey:@"month"], *day=[vc valueForKey:@"day"];
+    [month selectItemAtIndex:7]; [vc performSelector:@selector(monthChanged:) withObject:nil]; [day selectItemAtIndex:14];
+    SaveSnapshot(vc.view,[snapshots stringByAppendingPathComponent:@"birthday-editor.png"]);
+    [vc performSelector:@selector(save:) withObject:nil];
+    Check(store.birthdays.count==1 && store.birthdays.firstObject.month==8 && store.birthdays.firstObject.day==15,@"Save editor values");
+    [window setContentSize:vc.view.fittingSize]; [vc.view layoutSubtreeIfNeeded];
+    SaveSnapshot(vc.view,[snapshots stringByAppendingPathComponent:@"birthday-list.png"]);
+    [vc performSelector:@selector(showEditor:) withObject:store.birthdays.firstObject];
+    NSPopUpButton *type=[vc valueForKey:@"calendarType"]; [type selectItemAtIndex:1];
+    [vc performSelector:@selector(calendarChanged:) withObject:nil];
+    month=[vc valueForKey:@"month"]; day=[vc valueForKey:@"day"];
+    [month selectItemAtIndex:1]; [vc performSelector:@selector(monthChanged:) withObject:nil];
+    Check(day.numberOfItems==29,@"Gregorian February allows leap-day birthday");
+    [day selectItemAtIndex:28]; [vc performSelector:@selector(save:) withObject:nil];
+    Check(store.birthdays.count==1 && !store.birthdays.firstObject.lunar && !store.birthdays.firstObject.leapMonth && store.birthdays.firstObject.day==29,@"Edit birthday from lunar to Gregorian without adding another record");
+    [window orderOut:nil];
+    [NSFileManager.defaultManager removeItemAtURL:dir error:nil];
+    NSLog(@"PASS: birthday list, editor, defaults and saved values");
+}
+
 static void TestLayout(NSString *sourceRoot, NSString *snapshots) {
     [NSApplication sharedApplication];
     [Sizer shared];
     [Themer shared];
     LoadImages(sourceRoot);
+    BirthdayCalendarDelegate *birthdayDelegate=[BirthdayCalendarDelegate new];
     for (NSInteger size = 0; size <= 2; size++) {
         SizePref.sizePreference = size;
         for (NSNumber *weeks in @[@NO, @YES]) {
@@ -72,7 +143,9 @@ static void TestLayout(NSString *sourceRoot, NSString *snapshots) {
             pin.image = [NSImage imageNamed:@"btnPin"];
             MoButton *options = [MoButton new];
             options.image = [NSImage imageNamed:@"btnOpt"];
-            [cal installHeaderPinButton:pin optionsButton:options];
+            MoButton *birthday=[MoButton new]; birthday.image=[NSImage imageWithSystemSymbolName:@"birthday.cake" accessibilityDescription:@"亲友生日"];
+            [cal installBirthdayButton:birthday pinButton:pin optionsButton:options];
+            cal.delegate=birthdayDelegate;
             cal.todayDate = MakeDate(2026, 9, 27);
             cal.selectedDate = cal.todayDate;
             cal.weekStartDOW = 1;
@@ -98,6 +171,7 @@ static void TestLayout(NSString *sourceRoot, NSString *snapshots) {
             Check(fabs(NSWidth(cal.frame) - expectedWidth) < 0.5, [NSString stringWithFormat:@"Original calendar width retained: actual %.2f expected %.2f", NSWidth(cal.frame), expectedWidth]);
             Check(NSMaxX(options.frame) <= NSWidth(cal.frame), @"Options fits inside calendar");
             Check(NSMaxX(pin.frame) <= NSMinX(options.frame), @"Header buttons do not overlap");
+            Check(NSMaxX(birthday.frame) <= NSMinX([[cal valueForKey:@"btnPrev"] frame]),@"Birthday button before previous month");
             MoCalGrid *grid = [cal valueForKey:@"dateGrid"];
             MoCalGrid *weekGrid = [cal valueForKey:@"weekGrid"];
             for (MoCalCell *cell in grid.cells) {
@@ -117,6 +191,8 @@ static void TestLayout(NSString *sourceRoot, NSString *snapshots) {
                 Check(NSMinY(lastRect) >= 0.75, @"Full month-outline stroke fits in all 12 months");
             }
             [cal showTodayMonth:nil];
+            MoCalCell *birthdayCell=[grid cellWithDate:MakeDate(2026,9,27)];
+            Check(birthdayCell.hasBirthday && [birthdayCell.textField.textColor isEqual:NSColor.systemRedColor],@"Birthday remains red with event dots disabled");
             [grid addRow];
             Check(grid.cells.lastObject.showsLunarDate, @"Added rows show lunar dates");
             [grid removeRow];
@@ -147,6 +223,8 @@ static void TestLayout(NSString *sourceRoot, NSString *snapshots) {
             [window orderOut:nil];
         }
     }
+    TestBirthdayUI(snapshots);
+    TestBirthdayTooltip(snapshots);
 }
 
 int main(int argc, const char *argv[]) {
